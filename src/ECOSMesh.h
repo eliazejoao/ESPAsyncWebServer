@@ -35,7 +35,7 @@ public:
 
   bool     running()   const { return _running; }
   uint32_t nodeCount() const { return _count; }
-  uint32_t myNodeId()        { return _running ? _mesh.getNodeId() : 0; }
+  uint32_t myNodeId()        { return (_running && _mesh) ? _mesh->getNodeId() : 0; }
 
   // Callbacks
   PacketFn onPacket;
@@ -45,7 +45,7 @@ public:
 private:
   ECOSConfig&   _cfg;
   Scheduler     _sched;
-  painlessMesh  _mesh;
+  painlessMesh* _mesh    = nullptr;  // lazy init — criado só em beginRoot/beginNode
   bool          _running = false;
   uint32_t      _count   = 0;
   std::map<uint32_t, String> _devMap;  // nodeId → device_id

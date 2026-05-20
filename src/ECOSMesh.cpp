@@ -31,30 +31,31 @@ void ECOSMesh::_onReceive(uint32_t from, String& raw) {
 }
 
 void ECOSMesh::_onNew(uint32_t id) {
-  _count = _mesh.getNodeList(false).size();
+  _count = _mesh->getNodeList(false).size();
   Serial.printf("[Mesh] conectou: %u  total=%u\n", id, _count);
   if (onNodeJoin) onNodeJoin(id);
 }
 
 void ECOSMesh::_onDrop(uint32_t id) {
-  _count = _mesh.getNodeList(false).size();
+  _count = _mesh->getNodeList(false).size();
   _devMap.erase(id);
   Serial.printf("[Mesh] desconectou: %u  total=%u\n", id, _count);
   if (onNodeLeave) onNodeLeave(id);
 }
 
 void ECOSMesh::_initCallbacks() {
-  _mesh.onReceive([this](uint32_t f, String& r){ _onReceive(f, r); });
-  _mesh.onNewConnection([this](uint32_t id){ _onNew(id); });
-  _mesh.onDroppedConnection([this](uint32_t id){ _onDrop(id); });
+  _mesh->onReceive([this](uint32_t f, String& r){ _onReceive(f, r); });
+  _mesh->onNewConnection([this](uint32_t id){ _onNew(id); });
+  _mesh->onDroppedConnection([this](uint32_t id){ _onDrop(id); });
 }
 
 void ECOSMesh::beginRoot(uint8_t channel) {
   if (_running) return;
-  _mesh.setDebugMsgTypes(ERROR | STARTUP);
-  _mesh.init(_cfg.mesh_ssid, _cfg.mesh_password, &_sched, ECOS_MESH_PORT, WIFI_AP_STA, channel);
-  _mesh.setRoot(true);
-  _mesh.setContainsRoot(true);
+  _mesh = new painlessMesh();
+  _mesh->setDebugMsgTypes(ERROR | STARTUP);
+  _mesh->init(_cfg.mesh_ssid, _cfg.mesh_password, &_sched, ECOS_MESH_PORT, WIFI_AP_STA, channel);
+  _mesh->setRoot(true);
+  _mesh->setContainsRoot(true);
   _initCallbacks();
   _running = true;
   Serial.printf("[Mesh] root: %s canal=%d\n", _cfg.mesh_ssid, channel);
@@ -62,9 +63,10 @@ void ECOSMesh::beginRoot(uint8_t channel) {
 
 void ECOSMesh::beginNode(uint8_t channel) {
   if (_running) return;
-  _mesh.setDebugMsgTypes(ERROR | STARTUP);
-  _mesh.init(_cfg.mesh_ssid, _cfg.mesh_password, &_sched, ECOS_MESH_PORT, WIFI_AP_STA, channel);
-  _mesh.setContainsRoot(true);
+  _mesh = new painlessMesh();
+  _mesh->setDebugMsgTypes(ERROR | STARTUP);
+  _mesh->init(_cfg.mesh_ssid, _cfg.mesh_password, &_sched, ECOS_MESH_PORT, WIFI_AP_STA, channel);
+  _mesh->setContainsRoot(true);
   _initCallbacks();
   _running = true;
   Serial.printf("[Mesh] nó: %s canal=%d\n", _cfg.mesh_ssid, channel);
@@ -72,23 +74,24 @@ void ECOSMesh::beginNode(uint8_t channel) {
 
 void ECOSMesh::stop() {
   if (!_running) return;
-  _mesh.stop();
+  _mesh->stop();
+  delete _mesh; _mesh = nullptr;
   _running = false; _count = 0; _devMap.clear();
   Serial.println("[Mesh] parado");
 }
 
 void ECOSMesh::update() {
-  if (!_running) return;
+  if (!_running || !_mesh) return;
   _sched.execute();
-  _mesh.update();
+  _mesh->update();
 }
 
 bool ECOSMesh::sendToId(const String& devId, const char* type, const char* payload) {
-  if (!_running) return false;
+  if (!_running || !_mesh) return false;
   for (auto& kv : _devMap) {
     if (kv.second == devId) {
       String msg = _buildMsg(devId.c_str(), type, payload);
-      _mesh.sendSingle(kv.first, msg);
+      _mesh->sendSingle(kv.first, msg);
       Serial.printf("[Mesh TX] %s|%s → node %u\n", devId.c_str(), type, kv.first);
       return true;
     }
@@ -97,8 +100,8 @@ bool ECOSMesh::sendToId(const String& devId, const char* type, const char* paylo
 }
 
 bool ECOSMesh::broadcast(const char* type, const char* payload) {
-  if (!_running) return false;
+  if (!_running || !_mesh) return false;
   String msg = _buildMsg(_cfg.device_id, type, payload);
-  _mesh.sendBroadcast(msg);
+  _mesh->sendBroadcast(msg);
   return true;
 }

@@ -110,6 +110,7 @@ void ECOSWiFi::ensureAP() {
   WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(ECOS_AP_SSID, ECOS_AP_PASS);
   _apRunning = true;
+  _server.begin();  // lwIP já existe após WiFi.mode() — seguro inicializar aqui
   if (!_dnsRunning) {
     _dns.start(53, "*", WiFi.softAPIP());
     _dnsRunning = true;
