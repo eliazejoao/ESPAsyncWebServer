@@ -24,7 +24,8 @@ void ECOSFlash::push(const char* topic, const char* payload) {
     File fin  = LittleFS.open(ECOS_QUEUE_FILE, "r");
     File fout = LittleFS.open("/q_tmp.jsonl",  "w");
     fin.readStringUntil('\n');
-    while (fin.available()) fout.write(fin.read());
+    uint8_t buf[64];
+    while (fin.available()) { size_t n = fin.readBytes((char*)buf, sizeof(buf)); fout.write(buf, n); }
     fin.close(); fout.close();
     LittleFS.remove(ECOS_QUEUE_FILE);
     LittleFS.rename("/q_tmp.jsonl", ECOS_QUEUE_FILE);
@@ -44,25 +45,31 @@ void ECOSFlash::flush(SendFn sendFn) {
   if (!_ok || !sendFn || _count == 0) return;
   if (!LittleFS.exists(ECOS_QUEUE_FILE)) { _count = 0; return; }
   Serial.printf("[Flash] enviando %d pacotes...\n", _count);
-  File f = LittleFS.open(ECOS_QUEUE_FILE, "r");
-  int sent = 0; bool allSent = true;
-  while (f.available()) {
-    String line = f.readStringUntil('\n'); line.trim();
+
+  File fin  = LittleFS.open(ECOS_QUEUE_FILE, "r");
+  File ftmp = LittleFS.open("/q_tmp.jsonl", "w");
+  int sent = 0, kept = 0;
+  bool failed = false;
+
+  while (fin.available()) {
+    String line = fin.readStringUntil('\n'); line.trim();
     if (line.length() < 5) continue;
-    JsonDocument doc;
-    if (deserializeJson(doc, line) != DeserializationError::Ok) continue;
-    const char* t = doc["t"]; const char* p = doc["p"];
-    if (!t || !p) continue;
-    if (!sendFn(t, p)) { allSent = false; break; }
-    sent++;
-    delay(20);
-    ecosWatchdogReset();
+    if (!failed) {
+      JsonDocument doc;
+      if (deserializeJson(doc, line) != DeserializationError::Ok) continue;
+      const char* t = doc["t"]; const char* p = doc["p"];
+      if (!t || !p) continue;
+      if (sendFn(t, p)) { sent++; delay(20); ecosWatchdogReset(); continue; }
+      failed = true;
+    }
+    ftmp.println(line); kept++;
   }
-  f.close();
-  if (allSent) {
-    LittleFS.remove(ECOS_QUEUE_FILE); _count = 0;
-    Serial.printf("[Flash] flush OK: %d enviados\n", sent);
-  } else {
-    Serial.println("[Flash] flush interrompido");
-  }
+  fin.close(); ftmp.close();
+
+  LittleFS.remove(ECOS_QUEUE_FILE);
+  if (kept > 0) LittleFS.rename("/q_tmp.jsonl", ECOS_QUEUE_FILE);
+  else           LittleFS.remove("/q_tmp.jsonl");
+  _count = kept;
+
+  Serial.printf("[Flash] flush: %d enviados, %d restantes\n", sent, kept);
 }

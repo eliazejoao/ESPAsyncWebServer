@@ -79,6 +79,7 @@ void ECOSWiFi::begin(bool forceAP) {
 
 // ─── update ───────────────────────────────────────────────────────────────────
 void ECOSWiFi::update(uint32_t now) {
+  if (_dnsRunning) _dns.processNextRequest();
   if (_noSsidMode) return;
   if (now - _tCheck < ECOS_WIFI_CHECK_MS) return;
   _tCheck = now;
@@ -109,13 +110,18 @@ void ECOSWiFi::ensureAP() {
   WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(ECOS_AP_SSID, ECOS_AP_PASS);
   _apRunning = true;
-  Serial.printf("[AP] %s aberto (192.168.4.1)\n", ECOS_AP_SSID);
+  if (!_dnsRunning) {
+    _dns.start(53, "*", WiFi.softAPIP());
+    _dnsRunning = true;
+  }
+  Serial.printf("[AP] %s aberto (%s) — DNS captivo ativo\n", ECOS_AP_SSID, WiFi.softAPIP().toString().c_str());
 }
 
 void ECOSWiFi::closeAP() {
   if (!_apRunning) return;
   WiFi.softAPdisconnect(false);
   _apRunning = false;
+  if (_dnsRunning) { _dns.stop(); _dnsRunning = false; }
   Serial.println("[AP] fechado");
 }
 
@@ -166,82 +172,76 @@ void ECOSWiFi::setupPortalRoutes(std::function<void(ECOSConfig&)> onSaved) {
 
   _server.on("/", [this]() {
     if (!checkAuth()) return;
-    String html = FPSTR(PORTAL_STYLE);
-    html += F("<div class='logo'><div class='dot'></div><h1>ECOS Setup</h1></div>"
-              "<form method='POST' action='/save'>");
-
+    _server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+    _server.send(200, "text/html", "");
+    _server.sendContent(FPSTR(PORTAL_STYLE));
+    _server.sendContent(F("<div class='logo'><div class='dot'></div><h1>ECOS Setup</h1></div>"
+                          "<form method='POST' action='/save'>"));
     // Device
-    html += F("<h2>Dispositivo</h2>"
-              "<label>Device ID</label>"
-              "<input type='text' name='device_id' placeholder='ex: inv-01' value='");
-    html += String(_cfg.device_id);
-    html += F("'><label>Tipo</label>"
-              "<input type='text' name='device_type' placeholder='gateway/inversor/irrigacao' value='");
-    html += String(_cfg.device_type);
-    html += F("'>");
-
+    _server.sendContent(F("<h2>Dispositivo</h2>"
+                          "<label>Device ID</label>"
+                          "<input type='text' name='device_id' placeholder='ex: inv-01' value='"));
+    _server.sendContent(_cfg.device_id);
+    _server.sendContent(F("'><label>Tipo</label>"
+                          "<input type='text' name='device_type' placeholder='gateway/inversor/irrigacao' value='"));
+    _server.sendContent(_cfg.device_type);
+    _server.sendContent(F("'>"));
     // WiFi principal
-    html += F("<h2>WiFi Principal</h2>"
-              "<button type='button' class='scan' onclick='scan(\"s1\",\"n1\")'>&#x1F4F6; Buscar redes</button>"
-              "<div id='n1' class='nets'></div>"
-              "<label>SSID</label><input type='text' id='s1' name='ssid' value='");
-    html += String(_cfg.ssid);
-    html += F("'><label>Senha</label><div class='pw'>"
-              "<input type='password' id='p1' name='pass' placeholder='(manter vazio = sem alteração)'>"
-              "<button type='button' class='eye' onclick='tp(\"p1\")'>&#x1F441;</button></div>");
-
+    _server.sendContent(F("<h2>WiFi Principal</h2>"
+                          "<button type='button' class='scan' onclick='scan(\"s1\",\"n1\")'>&#x1F4F6; Buscar redes</button>"
+                          "<div id='n1' class='nets'></div>"
+                          "<label>SSID</label><input type='text' id='s1' name='ssid' value='"));
+    _server.sendContent(_cfg.ssid);
+    _server.sendContent(F("'><label>Senha</label><div class='pw'>"
+                          "<input type='password' id='p1' name='pass' placeholder='(manter vazio = sem alteração)'>"
+                          "<button type='button' class='eye' onclick='tp(\"p1\")'>&#x1F441;</button></div>"));
     // WiFi secundário
-    html += F("<h2>WiFi Secundária <span class='opt'>(failover)</span></h2>"
-              "<button type='button' class='scan' onclick='scan(\"s2\",\"n2\")'>&#x1F4F6; Buscar redes</button>"
-              "<div id='n2' class='nets'></div>"
-              "<label>SSID</label><input type='text' id='s2' name='ssid2' value='");
-    html += String(_cfg.ssid2);
-    html += F("'><label>Senha</label><div class='pw'>"
-              "<input type='password' id='p2' name='pass2' placeholder='(manter vazio = sem alteração)'>"
-              "<button type='button' class='eye' onclick='tp(\"p2\")'>&#x1F441;</button></div>");
-
+    _server.sendContent(F("<h2>WiFi Secundária <span class='opt'>(failover)</span></h2>"
+                          "<button type='button' class='scan' onclick='scan(\"s2\",\"n2\")'>&#x1F4F6; Buscar redes</button>"
+                          "<div id='n2' class='nets'></div>"
+                          "<label>SSID</label><input type='text' id='s2' name='ssid2' value='"));
+    _server.sendContent(_cfg.ssid2);
+    _server.sendContent(F("'><label>Senha</label><div class='pw'>"
+                          "<input type='password' id='p2' name='pass2' placeholder='(manter vazio = sem alteração)'>"
+                          "<button type='button' class='eye' onclick='tp(\"p2\")'>&#x1F441;</button></div>"));
     // MQTT
-    html += F("<h2>Servidor MQTT</h2><div class='row2'>"
-              "<input type='text' name='host' placeholder='host' value='");
-    html += String(_cfg.mqtt_host);
-    html += F("'><input type='number' name='port' value='");
-    html += String(_cfg.mqtt_port);
-    html += F("'></div>");
-
+    _server.sendContent(F("<h2>Servidor MQTT</h2><div class='row2'>"
+                          "<input type='text' name='host' placeholder='host' value='"));
+    _server.sendContent(_cfg.mqtt_host);
+    _server.sendContent(F("'><input type='number' name='port' value='"));
+    char portBuf[8]; snprintf(portBuf, sizeof(portBuf), "%u", _cfg.mqtt_port);
+    _server.sendContent(portBuf);
+    _server.sendContent(F("'></div>"));
     // Mesh WiFi
-    html += F("<h2>Rede Mesh WiFi</h2>"
-              "<label>SSID da Mesh</label>"
-              "<input type='text' name='mesh_ssid' value='");
-    html += String(_cfg.mesh_ssid);
-    html += F("'><label>Senha da Mesh</label><div class='pw'>"
-              "<input type='password' id='pm' name='mesh_pass' placeholder='(manter vazio = sem alteração)'>"
-              "<button type='button' class='eye' onclick='tp(\"pm\")'>&#x1F441;</button></div>");
-
+    _server.sendContent(F("<h2>Rede Mesh WiFi</h2>"
+                          "<label>SSID da Mesh</label>"
+                          "<input type='text' name='mesh_ssid' value='"));
+    _server.sendContent(_cfg.mesh_ssid);
+    _server.sendContent(F("'><label>Senha da Mesh</label><div class='pw'>"
+                          "<input type='password' id='pm' name='mesh_pass' placeholder='(manter vazio = sem alteração)'>"
+                          "<button type='button' class='eye' onclick='tp(\"pm\")'>&#x1F441;</button></div>"));
     // Segurança portal
-    html += F("<h2>Acesso ao Portal</h2>"
-              "<label>Usuário</label>"
-              "<input type='text' name='p_user' placeholder='admin' value='");
-    html += String(_cfg.portal_user);
-    html += F("'><label>Senha do portal</label><div class='pw'>"
-              "<input type='password' id='ppu' name='p_pass' placeholder='(manter vazio = sem alteração)'>"
-              "<button type='button' class='eye' onclick='tp(\"ppu\")'>&#x1F441;</button></div>"
-              "<h2>MQTT Broker</h2>"
-              "<label>Usuário MQTT</label>"
-              "<input type='text' name='m_user' value='");
-    html += String(_cfg.mqtt_user);
-    html += F("'><label>Senha MQTT</label><div class='pw'>"
-              "<input type='password' id='pmu' name='m_pass' placeholder='(manter vazio = sem alteração)'>"
-              "<button type='button' class='eye' onclick='tp(\"pmu\")'>&#x1F441;</button></div>");
-
+    _server.sendContent(F("<h2>Acesso ao Portal</h2>"
+                          "<label>Usuário</label>"
+                          "<input type='text' name='p_user' placeholder='admin' value='"));
+    _server.sendContent(_cfg.portal_user);
+    _server.sendContent(F("'><label>Senha do portal</label><div class='pw'>"
+                          "<input type='password' id='ppu' name='p_pass' placeholder='(manter vazio = sem alteração)'>"
+                          "<button type='button' class='eye' onclick='tp(\"ppu\")'>&#x1F441;</button></div>"
+                          "<h2>MQTT Broker</h2>"
+                          "<label>Usuário MQTT</label>"
+                          "<input type='text' name='m_user' value='"));
+    _server.sendContent(_cfg.mqtt_user);
+    _server.sendContent(F("'><label>Senha MQTT</label><div class='pw'>"
+                          "<input type='password' id='pmu' name='m_pass' placeholder='(manter vazio = sem alteração)'>"
+                          "<button type='button' class='eye' onclick='tp(\"pmu\")'>&#x1F441;</button></div>"));
     // OTA
-    html += F("<h2>OTA</h2><label>Senha OTA</label><div class='pw'>"
-              "<input type='password' id='po' name='ota_pass' value='");
-    html += String(_cfg.ota_pass);
-    html += F("'><button type='button' class='eye' onclick='tp(\"po\")'>&#x1F441;</button></div>");
-
-    html += F("<button type='submit'>Salvar e Reiniciar</button></form></div>");
-    html += FPSTR(PORTAL_SCRIPT);
-    _server.send(200, "text/html", html);
+    _server.sendContent(F("<h2>OTA</h2><label>Senha OTA</label><div class='pw'>"
+                          "<input type='password' id='po' name='ota_pass' value='"));
+    _server.sendContent(_cfg.ota_pass);
+    _server.sendContent(F("'><button type='button' class='eye' onclick='tp(\"po\")'>&#x1F441;</button></div>"));
+    _server.sendContent(F("<button type='submit'>Salvar e Reiniciar</button></form></div>"));
+    _server.sendContent(FPSTR(PORTAL_SCRIPT));
   });
 
   _server.on("/scan", [this]() {

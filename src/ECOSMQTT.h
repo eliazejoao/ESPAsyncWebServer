@@ -5,6 +5,10 @@
 #include <vector>
 #include "ECOSConfig.h"
 
+#ifndef ECOS_MQTT_PAYLOAD_MAX
+#define ECOS_MQTT_PAYLOAD_MAX 512
+#endif
+
 class ECOSMQTT {
 public:
   using MsgFn = std::function<void(const char* topic, const char* payload)>;

@@ -47,9 +47,13 @@ void ECOSLoRa::update() {
 bool ECOSLoRa::send(const char* devId, const char* type, const char* payload) {
   char pkt[256];
   snprintf(pkt, sizeof(pkt), "%s|%s|%s", devId, type, payload);
-  LoRa.beginPacket(); LoRa.print(pkt); LoRa.endPacket(true);
-  _txCount++;
-  Serial.printf("[LoRa TX] %s\n", pkt);
-  if (_ledPin >= 0) { digitalWrite(_ledPin, HIGH); delay(50); digitalWrite(_ledPin, LOW); }
-  return true;
+  LoRa.beginPacket();
+  LoRa.print(pkt);
+  bool ok = (LoRa.endPacket() == 1);
+  if (ok) {
+    _txCount++;
+    if (_ledPin >= 0) { digitalWrite(_ledPin, HIGH); delay(50); digitalWrite(_ledPin, LOW); }
+  }
+  Serial.printf("[LoRa TX] %s [%s]\n", pkt, ok ? "OK" : "ERRO");
+  return ok;
 }

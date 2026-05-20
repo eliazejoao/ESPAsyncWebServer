@@ -4,6 +4,7 @@
 #include <WebServer.h>
 #include <functional>
 #include "ECOSConfig.h"
+#include <DNSServer.h>
 
 #ifndef ECOS_WIFI_TIMEOUT_MS
 #define ECOS_WIFI_TIMEOUT_MS 30000
@@ -57,8 +58,10 @@ public:
 private:
   ECOSConfig& _cfg;
   WebServer&  _server;
+  DNSServer   _dns;
   bool        _apRunning  = false;
   bool        _noSsidMode = false;
+  bool        _dnsRunning = false;
   uint8_t     _failCount  = 0;
   uint32_t    _tCheck     = 0;
   bool        _wasConnected = false;

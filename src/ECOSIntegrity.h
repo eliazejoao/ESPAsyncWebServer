@@ -71,8 +71,8 @@ private:
   uint32_t           _tCheck   = 0;
 
   void _saveCrashLog() {
-    // LittleFS já deve estar montado pelo ECOSFlash::begin()
-    if (!LittleFS.begin()) return;
+    // Monta só se necessário — ECOSFlash::begin() pode já ter montado
+    if (!LittleFS.begin(true)) return;
     File f = LittleFS.open(ECOS_CRASH_FILE, "w");
     if (!f) return;
     f.printf("reset=%s uptime_prev=%lus heap=%u\n",

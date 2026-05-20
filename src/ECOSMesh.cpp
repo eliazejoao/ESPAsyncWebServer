@@ -19,7 +19,12 @@ void ECOSMesh::_onReceive(uint32_t from, String& raw) {
   const char* payload = doc["p"].isNull() ? (doc["payload"] | "{}") : (doc["p"] | "{}");
   if (!devId[0] || !type[0]) return;
 
-  _devMap[from] = String(devId);
+  String sDevId(devId);
+  for (auto it = _devMap.begin(); it != _devMap.end(); ) {
+    if (it->second == sDevId && it->first != from) it = _devMap.erase(it);
+    else ++it;
+  }
+  _devMap[from] = sDevId;
   Serial.printf("[Mesh RX] %s|%s from=%u\n", devId, type, from);
   if (strcmp(type, "REGISTER") == 0) return;
   if (onPacket) onPacket(devId, type, payload);

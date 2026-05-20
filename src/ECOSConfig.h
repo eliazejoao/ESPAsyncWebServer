@@ -47,3 +47,8 @@ String ecosMacString();
 
 // Retorna chip ID compacto (ex: "0C82DCD108F0")
 String ecosChipId();
+
+// Migra config do formato v15 (chaves NVS individuais no namespace "ecos").
+// Só executa se o blob ECOSConfig ainda não existe. Retorna true se migrou.
+// Chamar logo após ecosConfigLoad() na primeira inicialização v15→v16.
+bool ecosConfigMigrateV15(ECOSConfig& cfg);

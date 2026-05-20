@@ -60,24 +60,29 @@ void ECOSMQTT::_wsEvent(WStype_t ev, uint8_t* data, size_t len) {
     case WStype_CONNECTED:
       _connected = true;
       { char cid[48]; snprintf(cid, sizeof(cid), "ecos_%s_%lu", _cfg.device_id, millis()%100000);
+        Serial.printf("[MQTT] CONNECT id=%s\n", cid);
         _send(_buildConnect(cid)); }
       break;
     case WStype_BIN:
       if (len < 2) break;
       if ((data[0] & 0xF0) == 0x20) {  // CONNACK
-        _ready = (len >= 4 && data[3] == 0);
+        uint8_t rc = (len >= 4) ? data[3] : 0xFF;
+        _ready = (rc == 0);
+        Serial.printf("[MQTT] CONNACK rc=%d\n", rc);
         if (_ready) {
-          Serial.println("[MQTT] pronto");
           if (onConnect) onConnect();
         }
       } else if ((data[0] & 0xF0) == 0x30) {  // PUBLISH recebido
-        if (len < 4) break;
-        uint16_t tLen = (data[2]<<8)|data[3];
-        if (tLen+4 > len) break;
-        char topic[128]={}; memcpy(topic, data+4, min((size_t)tLen, sizeof(topic)-1));
-        const char* pl = (const char*)(data+4+tLen);
-        size_t plLen = len-4-tLen;
-        char payload[256]={}; memcpy(payload, pl, min(plLen, sizeof(payload)-1));
+        // parseia remaining-length variável (1 ou 2 bytes)
+        int hdr = 1;
+        while (hdr < (int)len && (data[hdr++] & 0x80));
+        if (hdr + 2 > (int)len) break;
+        uint16_t tLen = (data[hdr]<<8) | data[hdr+1];
+        int pStart = hdr + 2 + tLen;
+        if (pStart > (int)len) break;
+        char topic[128]={}; memcpy(topic, data+hdr+2, min((size_t)tLen, sizeof(topic)-1));
+        size_t plLen = len - pStart;
+        char payload[ECOS_MQTT_PAYLOAD_MAX]={}; memcpy(payload, data+pStart, min(plLen, sizeof(payload)-1));
         if (onMessage) onMessage(topic, payload);
       }
       break;

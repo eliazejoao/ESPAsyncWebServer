@@ -11,16 +11,20 @@ class ECOSOTA {
 public:
   using VoidFn = std::function<void()>;
 
-  // hostname: nome mDNS (ex: "ecos-gateway"), password: senha OTA
   void begin(const char* hostname, const char* password);
-  void update();  // chame no loop() — processa ArduinoOTA
+  void update();
 
-  // Verifica e aplica atualização HTTP
-  // baseUrl: "https://ecossolar.com/api/firmware"
-  // deviceId: "ecos-gateway"
+  // Verifica e aplica atualização HTTP pull.
+  // Compara "modificado" do servidor com o último download — evita reflachar mesma versão.
   void checkHttp(const char* baseUrl, const char* deviceId, int ledPin = -1);
+
+  // Limpa o timestamp guardado (força re-download na próxima chamada)
+  void resetLastMod() { _lastMod = ""; }
 
   VoidFn onStart;
   VoidFn onEnd;
   VoidFn onError;
+
+private:
+  String _lastMod = "";
 };
